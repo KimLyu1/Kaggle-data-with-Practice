@@ -1,0 +1,286 @@
+---
+title: "R Notebook"
+output: default
+---
+
+# 
+```{r}
+library(dplyr)
+library(ggplot2)
+library(corrplot)
+library(caret)
+library(doParallel)
+library(Metrics)
+library(neuralnet)
+library(dtw)
+
+# parallel processing set up
+n_Cores <- detectCores()
+cluster_Set <- makeCluster(n_Cores)
+registerDoParallel(cluster_Set)
+
+
+```
+
+# Data
+```{r}
+student <- read.csv("D:/RFile/Kaggle/StudentPerformance/StudentsPerformance.csv", stringsAsFactors = T)
+
+str(student)     # 1000 rows   8 cols
+summary(student) 
+```
+
+# EDA
+```{r}
+# correlation between scores
+num_student <- student[, 6:8]
+corrplot(cor(num_student))
+chart.Correlation(num_student)   # they are highly relative.
+
+
+# Different score in Male/Female
+math_sex <- ggplot(data = student, aes(x = gender, y = math.score, fill = gender)) + 
+  geom_boxplot() +
+  theme_bw() + 
+  ggtitle("Math score between Male/Female") +
+  xlab("Gender") +
+  ylab("Math Score")
+
+reading_sex <- ggplot(data = student, aes(x = gender, y = reading.score, fill = gender)) + 
+  geom_boxplot() +
+  theme_bw() + 
+  ggtitle("Reading score between Male/Female") +
+  xlab("Gender") +
+  ylab("Reading Score")
+
+writing_sex <- ggplot(data = student, aes(x = gender, y = writing.score, fill = gender)) + 
+  geom_boxplot() +
+  theme_bw() + 
+  ggtitle("Writing score between Male/Female") +
+  xlab("Gender") +
+  ylab("Writing Score")
+
+# Different score in race.ethnicity
+math_race <- ggplot(data = student, aes(x = race.ethnicity, y = math.score, fill = race.ethnicity)) + 
+  geom_boxplot() +
+  theme_bw() + 
+  ggtitle("Math score between Race Group") +
+  xlab("Race Group") +
+  ylab("Math Score")
+
+reading_race <- ggplot(data = student, aes(x = race.ethnicity, y = reading.score, fill = race.ethnicity)) + 
+  geom_boxplot() +
+  theme_bw() + 
+  ggtitle("Reading score between Race Group") +
+  xlab("Race Group") +
+  ylab("Reading Score")
+
+writing_race <- ggplot(data = student, aes(x = race.ethnicity, y = writing.score, fill = race.ethnicity)) + 
+  geom_boxplot() +
+  theme_bw() + 
+  ggtitle("Writing score between Race Group") +
+  xlab("Race Group") +
+  ylab("Writing Score")
+
+# Different score in parental.level.of.education
+math_parentalEdu <- ggplot(data = student, aes(x = parental.level.of.education, y = math.score, fill = parental.level.of.education)) + 
+  geom_boxplot() +
+  theme_bw() + 
+  ggtitle("Math score between Parental Education Level") +
+  xlab("Parental Education Level") +
+  ylab("Math Score")
+
+reading_parentalEdu <- ggplot(data = student, aes(x = parental.level.of.education, y = reading.score, fill = parental.level.of.education)) + 
+  geom_boxplot() +
+  theme_bw() + 
+  ggtitle("Reading score between Parental Education Level") +
+  xlab("Parental Education Level") +
+  ylab("Reading Score")
+
+writing_parentalEdu <- ggplot(data = student, aes(x = parental.level.of.education, y = writing.score, fill = parental.level.of.education)) + 
+  geom_boxplot() +
+  theme_bw() + 
+  ggtitle("Writing score between Parental Education Level") +
+  xlab("Parental Education Level") +
+  ylab("Writing Score")
+
+# Different score in lunch
+math_lunch <- ggplot(data = student, aes(x = lunch, y = math.score, fill = lunch)) + 
+  geom_boxplot() +
+  theme_bw() + 
+  ggtitle("Math score between lunch") +
+  xlab("Lunch") +
+  ylab("Math Score")
+
+reading_lunch <- ggplot(data = student, aes(x = lunch, y = reading.score, fill = lunch)) + 
+  geom_boxplot() +
+  theme_bw() + 
+  ggtitle("Reading score between lunch") +
+  xlab("Lunch") +
+  ylab("Reading Score")
+
+writing_lunch <- ggplot(data = student, aes(x = lunch, y = writing.score, fill = lunch)) + 
+  geom_boxplot() +
+  theme_bw() + 
+  ggtitle("Writing score between lunch") +
+  xlab("Lunch") +
+  ylab("Writing Score")
+
+# Different score in test.preparation.course
+math_testPrep <- ggplot(data = student, aes(x = test.preparation.course, y = math.score, fill = test.preparation.course)) + 
+  geom_boxplot() +
+  theme_bw() + 
+  ggtitle("Math score between Test Preparation Course") +
+  xlab("Test Preparation Course") +
+  ylab("Math Score")
+
+reading_testPrep <- ggplot(data = student, aes(x = test.preparation.course, y = reading.score, fill = test.preparation.course)) + 
+  geom_boxplot() +
+  theme_bw() + 
+  ggtitle("Reading score between Test Preparation Course") +
+  xlab("Test Preparation Course") +
+  ylab("Reading Score")
+
+writing_testPrep <- ggplot(data = student, aes(x = test.preparation.course, y = writing.score, fill = test.preparation.course)) + 
+  geom_boxplot() +
+  theme_bw() + 
+  ggtitle("Writing score between Test Preparation Course") +
+  xlab("Test Preparation Course") +
+  ylab("Writing Score")
+
+# Summary :  1. For Math score: Male, from group E, standard lunch, his(her) parents have master's degree and completed test                      preparation course will get higher mark.
+#            2. For Reading score: Female, from group E, standard lunch, his(her) parents have master's degree and completed test                 preparation course will get higher mark.
+#            3. For Writing score: Female, from group E, standard lunch, his(her) parents have master's degree and completed test                 preparation course will get higher mark.
+#            4. Male are specializing in mathematics and female are specializing in reading and writing.
+#            5. Student from group E got higher marks.
+#            6. Student who have standard lunch got higher marks.
+#            7. If students' parents have master's degree, they will get high marks.
+#            8. If students completed the test preparation course, they will have higher marks.
+```
+
+# Clustring Analysis
+```{r}
+# create empty col
+student$Level <- rep(NA, 1000)
+
+# give them levels
+for (i in 1:1000){
+  if (student$math.score[i] > 80 && student$reading.score[i] > 80 && student$writing.score[i] > 80){
+    student$Level[i] <- "A"
+  } else if (student$math.score[i] < 60 && student$reading.score[i] < 60 && student$writing.score[i] < 60){
+    student$Level[i] <- "C"
+  } else {
+    student$Level[i] <- "B"
+  }
+}
+
+clust_student <- student[, 6:9]
+
+distance <- dist(clust_student[, -4], method = 'Euclidean')
+hc_student <-  hclust(distance, method = 'complete')
+plot(hc_student,
+     labels = student$Level,
+     cex = 0.1,
+     hang = -1)
+
+library(cluster)
+hc_cluster_id_student <- cutree(hc_student, k = 3)
+
+sil_hc_student <- cluster::silhouette(hc_cluster_id_student, distance, labels = student$Level)
+plot(sil_hc_student)   # 1:0.29  2:0.55  3:0.69
+
+# Compare to actual
+summary(factor(student$Level))   # A: 0.11   B:0.7   C:0.19
+```
+
+
+# Linear Modelling
+```{r warning=FALSE}
+# Dividing the training set and test set
+n_rows <- nrow(student)
+# sample 70% (n_rows * 0.7) indices in the ranges 1:nrows
+training_idx <- sample(n_rows, n_rows * 0.7)
+
+training_student <- student[training_idx,]
+test_student <- student[-training_idx,]
+
+# Make formula
+formula_math <- math.score ~ gender + race.ethnicity + parental.level.of.education + lunch + test.preparation.course + reading.score +  writing.score
+
+formula_reading <- reading.score ~ gender + race.ethnicity + parental.level.of.education + lunch + test.preparation.course + math.score +  writing.score
+
+formula_writing <- writing.score ~ gender + race.ethnicity + parental.level.of.education + lunch + test.preparation.course + math.score +  reading.score
+
+# Make cross validation
+modelControl <- trainControl(method="repeatedcv", 
+                             number=5,
+                             repeats=5,
+                             allowParallel=TRUE)
+# Math
+math_lm <- train(formula_math,
+                 data=training_student,
+                 method = "lm",
+                 trControl = modelControl)
+
+math_lm_pred <- predict(math_lm, newdata = test_student)
+
+# Reading
+reading_lm <- train(formula_reading,
+                 data=training_student,
+                 method = "lm",
+                 trControl = modelControl)
+
+reading_lm_pred <- predict(reading_lm, newdata = test_student)
+
+# Writing
+writing_lm <- train(formula_writing,
+                 data=training_student,
+                 method = "lm",
+                 trControl = modelControl)
+
+writing_lm_pred <- predict(writing_lm, newdata = test_student)
+
+data.frame(Score = c("Math", "Reading", "Writing"), 
+           RMSE = c(round(rmse(test_student$math.score, math_lm_pred)),
+                    round(rmse(test_student$reading.score, reading_lm_pred)),
+                    round(rmse(test_student$writing.score, writing_lm_pred))))
+
+```
+
+# Random Forest
+```{r}
+# Math
+math_rf <- train(formula_math,
+                  data=training_student,
+                  method="rf",
+                  trControl=modelControl,
+                  ntrees=500)
+
+math_rf_pred <- predict(math_rf, newdata = test_student)
+
+# Reading
+reading_rf <- train(formula_reading,
+                  data=training_student,
+                  method="rf",
+                  trControl=modelControl,
+                  ntrees=500)
+
+reading_rf_pred <- predict(reading_rf, newdata = test_student)
+
+# Writing
+writing_rf <- train(formula_writing,
+                  data=training_student,
+                  method="rf",
+                  trControl=modelControl,
+                  ntrees=500)
+
+reading_rf_pred <- predict(writing_rf, newdata = test_student)
+
+data.frame(Score = c("Math", "Reading", "Writing"), 
+           RMSE = c(round(rmse(test_student$math.score, math_rf_pred)),
+                    round(rmse(test_student$reading.score, reading_rf_pred)),
+                    round(rmse(test_student$writing.score, reading_rf_pred))))
+
+```
+
+

@@ -1,0 +1,283 @@
+---
+title: "R Notebook"
+output: default
+---
+
+# library
+```{r}
+library(quantmod)
+library(prophet)
+library(dplyr)
+library(fpp2)
+library(lubridate)
+library(rugarch)
+library(plotly)
+library(xts)
+library(PerformanceAnalytics)
+library(stringr)
+library(tidyverse)
+library(Metrics)
+```
+
+# load Data
+```{r}
+train_uniqlo <- read.csv("D:/RFile/Kaggle/Uniqlo Stock price Forecast/archive (1)/Uniqlo(FastRetailing) 2012-2016 Training - stocks2012-2016.csv")
+
+test_uniqlo <- read.csv("D:/RFile/Kaggle/Uniqlo Stock price Forecast/archive (1)/Uniqlo(FastRetailing) 2017 Test - stocks2017.csv")
+```
+
+# Inspect data
+```{r}
+str(train_uniqlo)   
+str(test_uniqlo)
+
+# change the data type of 'date'
+train_uniqlo$Date <- ymd(train_uniqlo$Date)
+test_uniqlo$Date <- ymd(test_uniqlo$Date)
+
+# change them into xts format, in order to analysis with GARCH model
+train_uniqlo <- xts(train_uniqlo[, -1], order.by = train_uniqlo$Date)
+test_uniqlo <- xts(test_uniqlo[, -1], order.by = test_uniqlo$Date)
+```
+
+# Calculate the return and ploting
+```{r}
+return <- CalculateReturns(train_uniqlo$Close)   # volatility rate
+
+# Remove the first row (NA value)
+return <- return[-1, ]
+
+# A brief look at its distribution
+chart.Histogram(return,
+                method = c("add.density", "add.normal"),
+                main = "The distribution of Return(s)",
+                colorset = c("blue", "green", "red"))
+# Its density line is almost same as normal distribution, perfect.
+
+chartSeries(return)    # This function will return a series graph.
+
+train_uniqlo %>% chartSeries(TA='addBBands();addBBands(draw="p");addVo();addMACD()')
+# Some of the charts are more important here. The top chart has three lines, the middle line being the moving average of the series, which eliminates daily price fluctuations in order to see the underlying trend of the stock. The remaining two lines are the standard deviation of the moving average, divided into two lines above and below. The bottom line is the convergence dispersion of the moving average, which indicates when to buy and when to sell. As a rule of thumb, if it falls below the line, sell, and conversely, if it rises above the line, the stock price is rising.
+```
+# Annualized volatiity
+```{r}
+chart.RollingPerformance(R = return["2012::2016"],
+                         width = 252,
+                         FUN = "sd.annualized",
+                         scale = 252,
+                         main = "Uniqlo's monthly rolling volatiity")
+# Annualised volatility is used to measure the volatility risk of an underlying investment. However, it is argued that the indicator should not be trusted blindly and that while volatility is an important risk, if not the main risk, it is definitely not the whole risk. For example, if a certain index A is more volatile but has been fluctuating upwards with good returns, and a certain index B is little volatile but has been moving sideways, can we say that index B is better than index A? Therefore, this is for information only and will not be discussed too much here.
+```
+# Modelling
+## 1.Using Random Walk method
+Random Walk is rooted in past performance is not an indicator of future results. Price fluctuations can not be predicted with accuracy. Therefore, this method is suitable for forecasting stock prices. (Stock price is almost not affected by past prices.)
+```{r}
+mu <- mean(return)
+sig <- sd(return)
+# These two parameters for later formula.
+
+# Generate random daily exponent increase rate using Uniqlo's mean and sd returns.
+# At this case, we will forecast one year price, and 1 year has around 252 trading days.
+price <- rep(NA, 252)
+
+# Assign the most recent price to the first value of 'price'
+price[1] <- as.numeric(train_uniqlo$Close[length(train_uniqlo$Close),])
+
+# Simulating the price
+for (i in 2:252) {
+  price[i] <- price[i-1] * exp(rnorm(1,mu,sig))
+}
+
+# Plotting
+# Create data frame
+random_data <- cbind(1:252, price)
+colnames(random_data) <- c("Days", "Price")
+random_data <- as.data.frame(random_data)
+
+rw_sim <- random_data %>% ggplot(aes(Days,Price)) + 
+                          geom_line() + 
+                          labs(title="Uniqlo price simulation for 1 year using random walk method") + 
+                          theme_bw()
+rw_sim
+```
+## 2.Using Montecarlo Method 
+Monte Carlo simulation: incredibly useful forecasting tool to predict outcomes of events with many random variables
+```{r}
+# Similarly, we need to create a matrix for using this method.
+N <- 500
+mc_matrix <- matrix(nrow=252, ncol=N)
+mc_matrix[1,1] <- as.numeric(train_uniqlo$Close[length(train_uniqlo$Close),])
+
+
+# Simulating the price
+for(j in 1:ncol(mc_matrix)){
+  mc_matrix[1,j] <- as.numeric(train_uniqlo$Close[length(train_uniqlo$Close),])
+
+for(i in 2:nrow(mc_matrix)){
+  mc_matrix[i,j] <- mc_matrix[i-1,j] * exp(rnorm(1,mu,sig))
+  }
+}
+
+# Organised into data frame
+colname <- str_c("Sim ",seq(1,500))
+colname <- c("Day", colname)
+
+mc_data <- cbind(1:252, mc_matrix)
+mc_data <- as_tibble(mc_data)
+colnames(mc_data) <- colname
+
+# To make more readable, using the quantile to show the result.
+probs<-c(0.005,0.025,0.25,0.5,0.75,0.975,0.995)
+mc_data[252,-1] %>% as.numeric() %>% quantile(probs=probs)
+# This means Uniqlo stock price may decrease to 22257, but also may upward to 144088.51!!
+
+# plot
+mc_data <- mc_data %>% gather("Simulation","Price", 2:501)
+
+mc_sim <- mc_data %>% ggplot(aes(x=Day,y=Price,Group=Simulation)) + 
+                      geom_line(alpha=0.2) +
+                      labs(title="Uniqlo: 500 Monte Carlo Simulations for 1 Year") +
+                      theme_bw()
+mc_sim
+```
+
+## 3.Using GARCH Model
+```{r}
+# Firstly, we try to make a standard GARCH model
+spec_sta <- ugarchspec(mean.model = list(armaOrder = c(0,0)),
+                variance.model = list(model = "sGARCH"),
+                distribution.model = "norm")
+model_sta <- ugarchfit(data = return, spec = spec_sta)
+model_sta
+# Looking this model detail, we can know the parameters are statistic significant, and also give us Information Criteria for later comparison.
+
+plot(model_sta, which = "all")
+# In this case, I will not explain all graphs meaning, if you want to know that, you could kick this link:
+# https://www.youtube.com/watch?v=qXoq6Lqb684
+
+# So, we can see that the qqplot has some curve, that means we can improve our model with Adjustments.
+
+
+# Now, try to change the model distribution to student t distribution
+spec_std <- ugarchspec(mean.model = list(armaOrder = c(0,0)),
+                variance.model = list(model = "sGARCH"),
+                distribution.model = "sstd")
+model_std <- ugarchfit(data = return, spec = spec_std)
+model_std
+# Unfortunately, the omega is not significant, although the information criteria is lower than previous one, it still not a good choice.
+
+plot(model_std, which = "all")
+
+
+# Now, let us try to use GJR-GARCH model with sstd
+spec_gjr <- ugarchspec(mean.model = list(armaOrder = c(0,0)),
+                variance.model = list(model = "gjrGARCH"),
+                distribution.model = "sstd")
+model_gjr <- ugarchfit(data = return, spec = spec_gjr)
+model_gjr
+# Unfortunately, the gamma1 is not significant, so it also not a good choice
+
+plot(model_gjr, which = "all")
+
+# GJR-GARCh with AR(1)
+spec_gjrAr <- ugarchspec(mean.model = list(armaOrder = c(1,0)),
+                variance.model = list(model = "gjrGARCH"),
+                distribution.model = "sstd")
+model_gjrAr <- ugarchfit(data = return, spec = spec_gjrAr)
+model_gjrAr
+
+plot(model_gjrAr, which = "all")
+# The twelfth pair of charts is very different. Because of the GJR model, according to this model when the news has a positive impact on the stock price the price rise is gradual and we don't see huge jumps, but when certain news has a negative impact on the market, as in a bear market, the impact is significantly higher, so according to this model the impact of the news is symmetrical but it is higher for negative news compared to positive.
+
+# But it seems that gjr-garch model can not fit well. Although the information criteria are low, but there always has at least one parameter is not significant. So, I will choose the first model to simulate the stock price.
+
+
+
+# Plotting
+sfinal <- spec_sta
+setfixed(sfinal) <- as.list(coef(model_sta))
+
+
+sGARCH_sim <- ugarchpath(spec = sfinal,
+                  m.sim = 3,    # is the number of time series you want the simulator to return.
+                  n.sim = 252,
+                  rseed = 123)
+
+pred <- 41830*apply(fitted(sGARCH_sim), 2, "cumsum") + 41830
+matplot(pred,
+        type = "l",
+        lwd = 3,
+        ylab = "Price",
+        xlab = "Day",
+        main = "Predicted Price of Uniqlo")
+```
+
+## 4.Using Prophet package
+```{r}
+# Re-load the data
+train_uniqlo <- read.csv("D:/RFile/Kaggle/Uniqlo Stock price Forecast/archive (1)/Uniqlo(FastRetailing) 2012-2016 Training - stocks2012-2016.csv")
+train_uniqlo$Date <- ymd(train_uniqlo$Date)
+
+ds <- train_uniqlo$Date
+y <- log(train_uniqlo$Close)
+df <- data.frame(ds, y)
+
+qplot(ds, y, data = df,
+      main = "Uniqlo closing prices 2012-2016")
+
+# Modelling and forecast
+m <- prophet(df)
+future <- make_future_dataframe(m, periods = 252)
+forecast <- predict(m, future)
+
+# plotting
+# plot(m, forecast)
+dyplot.prophet(m, forecast)
+prophet_plot_components(m, forecast)
+# It will best for buying the stock on July and sell them on Jan.
+```
+
+# Evaluation models
+```{r}
+# This stage uses RMSE to evaluate the models
+# Random Walk
+rmse(as.numeric(test_uniqlo$Close), random_data$Price)
+chartSeries(test_uniqlo$Close)
+plot(random_data$Price,
+     type = "l")
+
+# Montecarlo Method (choose the first iteration)
+rmse(as.numeric(test_uniqlo$Close), mc_data$Price[2:253])
+chartSeries(test_uniqlo$Close)
+plot(mc_data$Price[2:253],
+      type = "l")
+
+# sGARCH
+rmse(as.numeric(test_uniqlo$Close), pred[, 1])    # The first series
+rmse(as.numeric(test_uniqlo$Close), pred[, 2])    # The second series
+rmse(as.numeric(test_uniqlo$Close), pred[, 3])    # The third series
+autoplot(test_uniqlo$Close)
+plot(pred[, 1],
+      type = "l")
+plot(pred[, 2],
+      type = "l")
+plot(pred[, 3],
+      type = "l")
+
+# prophet model
+rmse(as.numeric(test_uniqlo$Close), exp(forecast$yhat))
+chartSeries(test_uniqlo$Close)
+plot(exp(forecast$yhat),
+      type = "l")
+
+# Comparison Table
+Method <- c("Random Walk", "Monte carlo", "sGARCH", "Prophet")
+RMSE <- c(round(rmse(as.numeric(test_uniqlo$Close), random_data$Price), 1),
+          round(rmse(as.numeric(test_uniqlo$Close), mc_data$Price[2:253]), 1),
+          round(rmse(as.numeric(test_uniqlo$Close), pred[, 3]), 1),
+          round(rmse(as.numeric(test_uniqlo$Close), exp(forecast$yhat)), 1))
+data.frame(cbind(Method, RMSE))
+
+# As we know, the stock price is really hard to forecast, because the price are not affected by past price, so this notebook try different method to predict it, and found most of method will forecast it upward rather than downward.
+```
+

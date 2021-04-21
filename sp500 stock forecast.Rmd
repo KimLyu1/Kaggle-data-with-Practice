@@ -1,0 +1,155 @@
+---
+title: "R Notebook"
+output: default
+---
+
+# library
+```{r warning=FALSE}
+library(quantmod)
+library(prophet)
+library(dplyr)
+library(fpp2)
+library(lubridate)
+library(rugarch)
+library(plotly)
+library(xts)
+library(PerformanceAnalytics)
+library(stringr)
+library(tidyverse)
+library(Metrics)
+library(data.table)
+library(TSstudio)
+library(zoo)
+library(tseries)
+```
+
+# Data
+```{r}
+sp500 <- fread("D:/RFile/Kaggle/S&P500 Stock data Time series/archive (1)/all_stocks_5yr.csv")
+str(sp500)   # 619040 * 7
+sp500 <- as.data.frame(sp500)
+sp500$date <- ymd(sp500$date)
+#summary(sp500)
+
+sp500 <- filter(sp500, Name == "AES")
+
+# I will choose close price only.
+sp500 <- sp500[, c(1,5)]
+#str(sp500)
+
+# split train and test set
+train <- sp500[1:(nrow(sp500)*0.7), ]
+test <- sp500[882:1259, ]
+
+#train_idx <- sample(nrow(sp500), nrow(sp500)*0.7)
+#train <- sp500[train_idx, ]
+#test <- sp500[-train_idx, ]
+
+# convert to xts 
+train_xts <- xts(train[, -1], order.by = train$date)
+test_xts <- xts(test[, -1], order.by = test$date)
+```
+
+# EDA
+```{r}
+autoplot(train_xts, main = "AES stock price change in 2013-2016") +
+  xlab("Time") +
+  ylab("Price")
+
+# It can see that it has some trend. From 2013 to half year of 2014, its price is increasing, but after that, the price go downward. However, at the 2016, the price back to upward.
+```
+
+# Use prophet package
+```{r warning=FALSE}
+# prophet model require a data frame, so we use 'train'
+ds <- train$date
+y <- train$close
+train <- data.frame(ds, y)
+prophet_model <- prophet(train, daily.seasonality=TRUE)
+future <- make_future_dataframe(prophet_model, periods = 378)
+forecast_prophet <- predict(prophet_model, future)
+
+# plot
+dyplot.prophet(prophet_model, forecast_prophet)
+prophet_plot_components(prophet_model, forecast_prophet)
+
+# evaluate
+rmse_prophet <- rmse(test$close, forecast_prophet$yhat[882:1259])   
+```
+
+# Using Arima
+```{r warning=FALSE}
+# adf test
+adf.test(train_xts)   # not a stationary series
+
+# auto choose a model
+train_autoarima <- auto.arima(train_xts, stepwise = F, approximation = F, seasonal = F)
+train_autoarima   # ARIMA(1,1,1) 
+
+# forecast
+train_autoarima_forecast <- forecast(train_autoarima, h = 378)
+
+# plot
+autoplot(train_autoarima_forecast) + 
+  ylab("Price")
+
+# evaluate
+rmse_autoarima <- rmse(test$close, train_autoarima_forecast$mean)
+```
+
+# Using ETS method
+```{r}
+train_ets <- ets(train_xts, model = "ZZZ")
+
+# forecast
+train_ets_forecast <- forecast(train_ets, h = 378)
+
+# plot
+autoplot(train_ets_forecast)
+
+# evaluate
+rmse_ets <- rmse(test$close, train_ets_forecast$mean)
+```
+
+# Compare ets and arima
+```{r}
+fets <- function(x,h) {
+  forecast(ets(x),h = h)
+}
+farima <- function(x,h) {
+  forecast(auto.arima(x, stepwise = F, approximation = F),h=h)
+}
+
+e1 <- tsCV(train_xts, fets, h = 1)
+e2 <- tsCV(train_xts, farima, h = 1)
+mean(e1^2,na.rm=TRUE)    # ets   0.03927775
+mean(e2^2,na.rm=TRUE)    # autoarima   0.04028729
+```
+
+# Using NN
+```{r}
+# modelling
+train_nnetar <- nnetar(train_xts)
+
+# forecast
+train_nnetar_forecast <- forecast(train_nnetar, h = 378)
+
+# plotting
+autoplot(train_nnetar_forecast)
+
+# evaluate
+rmse_nnetar <- rmse(test$close, train_nnetar_forecast$mean)
+rmse_nnetar
+```
+# compare all method
+```{r}
+data.frame(Arima = rmse_autoarima,
+           ETS = rmse_ets,
+           Prophet = rmse_prophet,
+           NN = rmse_nnetar) %>% 
+  t() %>%
+  data.frame() -> rmse_table
+
+colnames(rmse_table) <- "RMSE"
+```
+

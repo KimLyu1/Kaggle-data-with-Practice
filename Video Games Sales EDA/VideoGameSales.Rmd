@@ -1,0 +1,815 @@
+---
+title: "Video Game Sales"
+output: default
+---
+
+# 1.加载包
+```{r}
+library(tidyverse)
+library(Hmisc)
+library(ggthemes)
+library(ggplot2)
+library(reshape2)
+library(data.table)
+library(hrbrthemes)
+library(gganimate)
+library(ggThemeAssist)
+library(gridExtra)
+library(gapminder)
+library(gifski)
+```
+
+# 2.加载数据集
+```{r}
+vgsales <- fread("D:/RFile/Kaggle/Video Game Sales/vgsales.csv", stringsAsFactors = FALSE)
+```
+
+# 3.描述性统计
+```{r}
+# 查看其变量的结构
+str(vgsales)
+
+# 查看其变量的描述性统计指标
+summary(vgsales)
+
+# 查看其前6行
+head(vgsales)
+
+# 查看其后6行
+tail(vgsales)
+```
+该数据集类型为数据表与数据框，在后续会将其转换为数据框。其名义变量在后面均可以转换为因子。
+
+# 4.简单的数据转换与清理
+```{r}
+# 转换为数据框
+vgsales <- data.frame(vgsales)
+
+# 将部分变量转换为因子类型
+for (i in 3:6) {
+  vgsales[,i] <- as.factor(vgsales[,i])
+}
+
+# 去掉第一列（Rank变量对后续分析无影响）
+vgsales <- vgsales[,-1]
+
+# 再次检查数据集有无缺失值
+describe(vgsales)    # 描述指出并未有缺失值
+
+# 使用unique函数确认因子是否含有NA
+#unique(vgsales$Year)            # 有NA
+#unique(vgsales$Platform)        # 无NA
+#unique(vgsales$Publisher)       # 有NA
+#unique(vgsales$Genre)           # 无NA
+
+vgsales <- vgsales[vgsales$Year!='N/A',]
+vgsales <- vgsales[vgsales$Publisher!='N/A',]
+
+# 将2020年数据移除（数据量太少）
+vgsales <- vgsales[vgsales$Year!=2020, ]
+```
+
+# 5.探索性数据分析
+  - 先从整体出发，以可视化的方法寻找Global_Sales相关信息
+    a) 不同Genre, Publisher, Platform and year的Global_Sales情况如何？
+```{r}
+# a) Year
+Year_sales <- vgsales %>% group_by(Year) %>% summarise(sum_global_sales = sum(Global_Sales), .groups = 'drop')
+
+ggplot(data = Year_sales, aes(x = Year, y = sum_global_sales, group = 1)) + 
+  geom_line() +
+  geom_point() +
+  theme_light() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),legend.position="top") + theme(panel.grid.major = element_line(linetype = "blank"), 
+    panel.grid.minor = element_line(linetype = "blank"), 
+    axis.title = element_text(size = 12, 
+        face = "italic", colour = "cadetblue4"), 
+    plot.title = element_text(size = 14, 
+        face = "bold", colour = "cadetblue"), 
+    panel.background = element_rect(fill = NA), 
+    plot.background = element_rect(fill = "aliceblue", 
+        colour = "aliceblue", size = 1)) +labs(title = "Global Sales By Year", y = "Global Sales", 
+    colour = "Blue")
+
+# a) Genre
+Genre_sales <- vgsales %>% group_by(Genre) %>% summarise(sum_global_sales = sum(Global_Sales), .groups = 'drop') 
+
+#options(repr.plot.width = 25, repr.plot.height = 15)
+ggplot(data = Genre_sales, aes(x = Genre, y = sum_global_sales, fill = Genre)) + 
+  geom_bar(stat = 'identity') +
+  geom_label(aes(label = sum_global_sales), size = 3) +
+    theme_light() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),legend.position="top") + theme(panel.grid.major = element_line(linetype = "blank"), 
+    panel.grid.minor = element_line(linetype = "blank"), 
+    axis.title = element_text(size = 12, 
+        face = "italic", colour = "cadetblue4"), 
+    plot.title = element_text(size = 14, 
+        face = "bold", colour = "cadetblue"), 
+    panel.background = element_rect(fill = NA), 
+    plot.background = element_rect(fill = "aliceblue", 
+        colour = "aliceblue", size = 1)) +labs(title = "Global Sales By Genre", y = "Global Sales", 
+    colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"), 
+    legend.position = "right")
+
+# a) Top 10 Platform
+Platform_sales <- vgsales %>% group_by(Platform) %>% summarise(sum_global_sales = sum(Global_Sales), .groups = 'drop') %>% 
+  arrange(desc(sum_global_sales)) %>%
+  mutate(percent = sum_global_sales/sum(sum_global_sales)*100)
+
+ggplot(data= head(Platform_sales, 10), aes(x= "", y=percent, fill = Platform)) +
+  geom_bar(stat="identity", color = 'white') +
+  coord_polar("y", start=0) +
+    theme_light() +
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=1),legend.position="top") + theme(panel.grid.major = element_line(linetype = "blank"), 
+    panel.grid.minor = element_line(linetype = "blank"), 
+    axis.title = element_text(size = 12, 
+        face = "italic", colour = "cadetblue4"), 
+    plot.title = element_text(size = 14, 
+        face = "bold", colour = "cadetblue"), 
+    panel.background = element_rect(fill = NA), 
+    plot.background = element_rect(fill = "aliceblue", 
+        colour = "aliceblue", size = 1)) +labs(title = "Global Sales By % Top 10 Platform", y = "", x = "", 
+    colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"), 
+    legend.position = "right") +
+  geom_text(aes(label = paste0(round(percent),"%")), position = position_stack(vjust = 0.5),color = "black",size=5)
+
+# a) Top 10 publisher
+Publisher_sales <- vgsales %>% group_by(Publisher) %>% summarise(sum_global_sales = sum(Global_Sales), .groups = 'drop') %>% 
+  arrange(desc(sum_global_sales))
+
+ggplot(data = head(Publisher_sales, 10), aes(x = Publisher, y = sum_global_sales, fill = Publisher)) + 
+  geom_bar(stat = 'identity') +
+  geom_label(aes(label = sum_global_sales), size = 3) +
+    theme_light() +
+  coord_flip() +
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=1),legend.position="top") + 
+  theme(panel.grid.major = element_line(linetype = "blank"), 
+    panel.grid.minor = element_line(linetype = "blank"), 
+    axis.title = element_text(size = 12, 
+        face = "italic", colour = "cadetblue4"), 
+    plot.title = element_text(size = 14, 
+        face = "bold", colour = "cadetblue"), 
+    panel.background = element_rect(fill = NA), 
+    plot.background = element_rect(fill = "aliceblue", 
+        colour = "aliceblue", size = 1)) +labs(title = "Top 10 Global Sales By Publisher", y = "Global Sales", 
+    colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"), 
+    legend.position = "right", axis.text.y=element_blank()) 
+```
+现阶段总结：
+i) 随着年份的增加，越来越多的人愿意购买电子游戏，其中2008年的销售额达到了峰值，之后的十年里出现了断崖式下跌 (原因还未知)
+ii) 动作类的电子游戏最热卖，其次是模拟类游戏
+iii) 各平台的市场份额占比不均，其中PS2的市场规模最大，其次是PS3和X360
+iv) 游戏出版商方面，任天堂的游戏最为热卖且受到玩家追捧，其销售额超过第二名艺声700万美元
+
+
+    b) 每个年份中，所发行的游戏类型都有哪些，有多少？
+    c) 每个年份中，哪些平台有发行游戏，发行了多少？
+```{r}
+# b)
+
+Genre_game_num <-vgsales %>%
+    group_by(Year,Genre) %>%
+    summarise(count_name = length(unique(Name)), .groups = 'drop') %>%
+    arrange(desc(Year))
+
+ggplot(data = Genre_game_num, aes(x = Year, y = count_name, fill = Genre)) +
+  geom_bar(stat = "identity", position = "stack") +
+  theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 90,
+    vjust = 0.5,
+    hjust = 1
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Game Sold Quantity By Genre", y = "Games Count",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right")
+
+# c)
+
+Platform_game_num <-vgsales %>%
+    group_by(Year, Platform) %>%
+    summarise(count_name = length(unique(Name)), .groups = 'drop') %>%
+    arrange(desc(Year))
+
+ggplot(data = Platform_game_num, aes(x = Year, y = count_name, fill = Platform)) +
+  geom_bar(stat = "identity", position = "stack") +
+  theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 90,
+    vjust = 0.5,
+    hjust = 1
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Game Sold Quantity By Platform", y = "Games Count",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right")
+```
+
+    d) 不同平台在不同地区销售额的表现
+```{r warning=FALSE}
+Platform_sales_all <- vgsales %>%
+  group_by(Platform) %>%
+  summarise(Global_Sales = sum(Global_Sales),
+            NA_Sales = sum(NA_Sales),
+            EU_Sales = sum(EU_Sales),
+            JP_Sales = sum(JP_Sales),
+            Other_Sales = sum(Other_Sales), .groups = 'drop') %>% 
+  arrange(desc(Global_Sales))
+
+# 列转行
+Platform_sales_all <- head(Platform_sales_all, 10)   # 选10个平台
+Platform_sales_all <- melt(Platform_sales_all)
+names(Platform_sales_all) <- c("Platform", "district", "sales")
+
+ggplot(data = Platform_sales_all, aes(x = district, y = sales, fill = Platform)) +
+  geom_bar(stat = "identity", position = "dodge") +
+    theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0,
+    hjust = 0.5
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Each district sales By Platform", y = "Sales",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right")
+```
+在大多数地区，PS2与X360的销售额都较高，除了Other地区。在EU和JP地区，PS2和PS3的销售额几乎相同。而在NA、Other和EU市场，X360和Wii的销售额也几乎相同。
+    e) 现在让我们看看各个市场中，哪些游戏表现较为亮眼？
+```{r}
+options(repr.plot.width = 14, repr.plot.height = 25)
+# NA市场--Top 10
+NA_10_games <- vgsales %>% group_by(Name) %>% 
+  summarise(sum_na_sales = sum(NA_Sales), .groups = 'drop') %>%
+  arrange(desc(sum_na_sales)) %>%
+  head(10)
+
+a <- ggplot(data = NA_10_games, aes(x = Name, y = sum_na_sales, fill = Name)) + 
+  geom_bar(stat = "identity") +
+  theme_light() +
+  geom_label(aes(label = sum_na_sales), size = 3) +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0,
+    hjust = 0.5
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Top 10 Games have the most sales in NA Market", y = "Sales",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right") +
+  theme(axis.text.x = element_text(angle = 30, vjust = 0.8, hjust=0.6),legend.position="none")
+
+# EU市场--Top 10
+EU_10_games <- vgsales %>% group_by(Name) %>% 
+  summarise(sum_eu_sales = sum(EU_Sales), .groups = 'drop') %>%
+  arrange(desc(sum_eu_sales)) %>%
+  head(10)
+
+b <- ggplot(data = EU_10_games, aes(x = Name, y = sum_eu_sales, fill = Name)) + 
+  geom_bar(stat = "identity") +
+  theme_light() +
+  geom_label(aes(label = sum_eu_sales), size = 3) +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0,
+    hjust = 0.5
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Top 10 Games have the most sales in EU Market", y = "Sales",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right") +
+  theme(axis.text.x = element_text(angle = 30, vjust = 0.8, hjust=0.6),legend.position="none")
+
+# JP市场--Top 10
+JP_10_games <- vgsales %>% group_by(Name) %>% 
+  summarise(sum_jp_sales = sum(JP_Sales), .groups = 'drop') %>%
+  arrange(desc(sum_jp_sales)) %>%
+  head(10)
+
+c <- ggplot(data = JP_10_games, aes(x = Name, y = sum_jp_sales, fill = Name)) + 
+  geom_bar(stat = "identity") +
+  theme_light() +
+  geom_label(aes(label = sum_jp_sales), size = 3) +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0,
+    hjust = 0.5
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Top 10 Games have the most sales in JP Market", y = "Sales",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right") +
+  theme(axis.text.x = element_text(angle = 30, vjust = 0.8, hjust=0.6),legend.position="none")
+
+# Other市场--Top 10
+Other_10_games <- vgsales %>% group_by(Name) %>% 
+  summarise(sum_other_sales = sum(Other_Sales), .groups = 'drop') %>%
+  arrange(desc(sum_other_sales)) %>%
+  head(10)
+
+d <- ggplot(data = Other_10_games, aes(x = Name, y = sum_other_sales, fill = Name)) + 
+  geom_bar(stat = "identity") +
+  theme_light() +
+  geom_label(aes(label = sum_other_sales), size = 3) +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0,
+    hjust = 0.5
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Top 10 Games have the most sales in Other Market", y = "Sales",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right") +
+  theme(axis.text.x = element_text(angle = 30, vjust = 0.8, hjust=0.6),legend.position="none")
+
+grid.arrange(a, b, c, d, ncol = 2, nrow = 2)   # 在console运行放大后效果更好
+```
+
+不难发现，Wii sports除了在JP市场表现较差外，在另外三个市场都是表现都较好的, 现在让我们看看世界前十的游戏都有哪些。
+```{r}
+World_10_games <- vgsales %>% group_by(Name) %>% 
+  summarise(sum_global_sales = sum(Global_Sales), .groups = 'drop') %>%
+  arrange(desc(sum_global_sales)) %>%
+  head(10)
+
+ggplot(data = World_10_games, aes(x = Name, y = sum_global_sales, fill = Name)) + 
+  geom_bar(stat = "identity") +
+  theme_light() +
+  geom_label(aes(label = sum_global_sales), size = 3) +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0,
+    hjust = 0.5
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Top 10 Games have the most sales in the world", y = "Sales",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right") +
+  theme(axis.text.x = element_text(angle = 30, vjust = 0.8, hjust=0.6),legend.position="none")
+```
+如上图所示，Wii sports稳居第一，侠盗猎车5位居第二。现在让我们看看世界前五的游戏在各个市场上的表现如何？
+
+```{r}
+World_5_games <- vgsales %>% group_by(Name) %>% 
+  summarise(Global_Sales = sum(Global_Sales),
+            NorthAmerica = sum(NA_Sales),
+            Europe = sum(EU_Sales),
+            Japan = sum(JP_Sales),
+            Other = sum(Other_Sales),
+            .groups = 'drop') %>%
+  arrange(desc(Global_Sales)) %>%
+  head(5) %>%
+  melt()
+
+names(World_5_games) <- c("Name", "Market", "Sales")
+World_5_games <- subset(World_5_games, Market != "Global_Sales")
+
+ggplot(data = World_5_games, aes(x = Market, y = Sales, fill = Name)) +
+  geom_bar(stat = "identity", position = "dodge") +
+    theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0,
+    hjust = 0.5
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Top 5 Games' performance in each Market", y = "Sales",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right")
+```
+可以看到，北美市场是每款游戏卖的最好的一个市场，为整体收入贡献了许多。而在欧洲市场呈现出来的现象来看，欧洲玩家青睐Wii sport和侠盗猎车5。北美玩家比如何地方的玩家都喜爱马里奥兄弟。日本市场与其他市场的表现都较为惨淡，表现平平。
+
+在之前我们已经呈现了游戏平台在全球市场的份额占比，现在我们来细看排名前10的游戏平台在每个市场的销售额如何
+```{r}
+platform_10_sales <- vgsales %>%
+  group_by(Platform) %>% 
+  summarise(Global_Sales = sum(Global_Sales),
+            NorthAmerica = sum(NA_Sales),
+            Europe = sum(EU_Sales),
+            Japan = sum(JP_Sales),
+            Other = sum(Other_Sales),
+            .groups = 'drop') %>% 
+  arrange(desc(Global_Sales)) %>%
+  head(10) 
+
+
+options(repr.plot.width = 20, repr.plot.height = 20)
+
+# NA
+NorthAmerica <- ggplot(data = platform_10_sales, aes(x = Platform, y = NorthAmerica)) +
+         geom_segment(aes(xend = Platform, yend=0, color = Platform), size = 2.3, alpha = .8) +
+         geom_point(mapping = aes(color = Platform), size = 3, shape = 19) +
+         geom_line(group = 1, size = 1.1, linetype = 10, color = "grey") + 
+  geom_label(aes(label = NorthAmerica), size = 3) +
+  theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0,
+    hjust = 0.5
+  ),
+  legend.position = "right") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Top 10 Platforms Sales in NA Market", y = "Sales",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "none")
+  
+
+# EU
+Europe <- ggplot(data = platform_10_sales, aes(x = Platform, y = Europe)) +
+         geom_segment(aes(xend = Platform, yend=0, color = Platform), size = 2.3, alpha = .8) +
+         geom_point(mapping = aes(color = Platform), size = 3, shape = 19) +
+         geom_line(group = 1, size = 1.1, linetype = 10, color = "grey") + 
+  geom_label(aes(label = Europe), size = 3) +
+  theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0,
+    hjust = 0.5
+  ),
+  legend.position = "right") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Top 10 Platforms Sales in Europe Market", y = "Sales",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "none")
+
+# JP
+Japan <- ggplot(data = platform_10_sales, aes(x = Platform, y = Japan)) +
+         geom_segment(aes(xend = Platform, yend=0, color = Platform), size = 2.3, alpha = .8) +
+         geom_point(mapping = aes(color = Platform), size = 3, shape = 19) +
+         geom_line(group = 1, size = 1.1, linetype = 10, color = "grey") + 
+  geom_label(aes(label = Japan), size = 3) +
+  theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0,
+    hjust = 0.5
+  ),
+  legend.position = "right") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Top 10 Platforms Sales in Japan Market", y = "Sales",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "none")
+
+# Other
+Other <- ggplot(data = platform_10_sales, aes(x = Platform, y = Other)) +
+         geom_segment(aes(xend = Platform, yend=0, color = Platform), size = 2.3, alpha = .8) +
+         geom_point(mapping = aes(color = Platform), size = 3, shape = 19) +
+         geom_line(group = 1, size = 1.1, linetype = 10, color = "grey") + 
+  geom_label(aes(label = Other), size = 3) +
+  theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0,
+    hjust = 0.5
+  ),
+  legend.position = "right") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Top 10 Platforms Sales in Other Market", y = "Sales",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "none")
+
+grid.arrange(NorthAmerica, Europe, Japan, Other, ncol = 2, nrow = 2)  # 在console运行效果更好（放大）
+```
+可以看到，PS2无论在哪个市场，排名都至少前三，属于全球玩家都爱的游戏平台。其中北美市场中，与PS2齐名的还有X360，而在欧洲市场，PS系平台表现更好。日本市场则有点不同，DS平台超越PS系独占龙头，而在世界其他市场中，呈现出来的与欧洲市场十分相似。
+
+  - 最后的最后，让我们看看这几十年间，发行的不同类别的游戏数量与销售额的变化
+```{r}
+Genre_games <- vgsales %>%
+    group_by(Year, Genre) %>%
+    summarise(Count = length(unique(Name)),
+              Sales = sum(Global_Sales),
+              .groups = 'drop') %>%
+    arrange(desc(Year))
+
+Genre_games$Year <- as.numeric(levels(Genre_games$Year))[Genre_games$Year]
+
+count_games <- ggplot(data = Genre_games, aes(x = Year, y = Count, group = Genre, color = Genre)) +
+    geom_line() +
+    geom_point() +
+    theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0,
+    hjust = 0.5
+  ),
+  legend.position = "right") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Count of games by Genre from 1980 to 2016", y = "Sales",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right") + 
+    transition_reveal(Year)
+animate(count_games, duration = 5, fps = 20, renderer = gifski_renderer())
+```
+
+
+```{r}
+sale_games <- ggplot(data = Genre_games, aes(x = Year, y = Sales, group = Genre, color = Genre)) +
+    geom_line() +
+    geom_point() +
+    theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0,
+    hjust = 0.5
+  ),
+  legend.position = "right") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Sales of games by Genre from 1980 to 2016", y = "Sales",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right") + 
+    transition_reveal(Year)
+
+animate(sale_games, duration = 5, fps = 20, renderer = gifski_renderer())
+
+```
+可以清楚看到其趋势都是逐年增长然后下降。
+
+<!-- 6.预测模型-预测未来的电子游戏销售额 -->
+<!--  - 该部分将使用ANCOVA方法来实现。因为其还有较多分类变量，ANCOVA是个不错的选择 -->
+<!-- ```{r} -->
+<!-- # 在这里仅预测电子游戏的全球销售额，即Global_Sales -->
+<!-- # 首先筛选变量 -->
+<!-- vgsales_split <- vgsales[, c(1:5,10)] -->
+
+<!-- vgsales_split$Year <- as.numeric(levels(vgsales_split$Year))[vgsales_split$Year] -->
+<!-- vgsales_split$Platform <- as.character(vgsales_split$Platform) -->
+<!-- vgsales_split$Genre <- as.character(vgsales_split$Genre) -->
+<!-- vgsales_split$Publisher <- as.character(vgsales_split$Publisher) -->
+
+<!-- set.seed(123) -->
+<!-- n_row <- nrow(vgsales_split) -->
+<!-- train_index <- sample(n_row, n_row*0.7) -->
+
+<!-- train <- vgsales_split[train_index, ] -->
+<!-- test <- vgsales_split[-train_index, ] -->
+
+<!-- ancova.sales <- lm(Global_Sales ~ ., data = train) -->
+<!-- ancova.sales <- step(ancova.sales) -->
+<!-- summary(ancova.sales) -->
+<!-- ``` -->
+

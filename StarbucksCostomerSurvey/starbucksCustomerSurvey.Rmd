@@ -1,0 +1,228 @@
+---
+title: "Starbucks customer survey"
+output: default
+---
+
+此数据是马来西亚有关星巴克客户行为的调查。
+此次分析的目标是预测客户忠诚度以留住客户。分析所有相关的客户数据并制定有针对性的客户保留计划
+
+# 1.加载包
+```{r}
+library(tidyverse)
+library(Hmisc)
+library(caret)
+library(ggplot2)
+library(corrplot)
+library(caret)
+library(rpart)
+library(kernlab)
+library(class)
+```
+
+# 2.读取数据
+```{r}
+starbucks <- read.csv("D:/RFile/Kaggle/starbucks customer survey/archive/Starbucks satisfactory survey encode cleaned.csv")
+
+#starbucks_raw <- read.csv("D:/RFile/Kaggle/starbucks customer survey/archive/Starbucks satisfactory survey.csv")
+```
+
+# 3.查看数据并清理
+```{r}
+head(starbucks)
+#head(starbucks_raw)
+
+str(starbucks)
+
+#describe(starbucks)   # cleaned
+
+# 但是值得注意的是，有些变量为固定值，属于方差较小的变量，对分析影响不大，可以考虑移除
+starbucks <- starbucks[, -nearZeroVar(starbucks)]
+starbucks <- starbucks[, -1]
+starbucks <- na.omit(starbucks)
+starbucks$loyal <- ifelse(starbucks$loyal == 0, 1, 0)  #源数据集中0才是忠诚客户，为了更符合辨认，修改为1表示。
+```
+
+## 初步查看相关性
+```{r}
+cor_starbucks <- cor(starbucks)
+corrplot(cor_starbucks)
+```
+
+```{r}
+# 根据相关图，移除一些与loyal相关性较小的变量
+starbucks <- starbucks[, c(-1,-2,-3,-4,-6,-13)]
+
+```
+
+
+```{r}
+# 层次聚类分析
+# 先计算距离
+dist_starbucks <- dist(starbucks[, -12], method = "euclidian")
+# 使用全连接方法
+hc_starbucks <- hclust(dist_starbucks, method = "complete")
+plot(hc_starbucks, hang = -0.1, labels = starbucks$loyal)
+# 将聚类分为两组
+hc_starbucks_cut <- cutree(hc_starbucks, k = 2)
+
+# 用silhouette score来评估
+sil_hc_starbucks <- cluster::silhouette(hc_starbucks_cut, dist_starbucks)
+plot(sil_hc_starbucks, main = "Silhouette plot")
+# 由Si可知，聚类效果并不是特别好
+```
+从聚类中可以知道：较多忠诚客户的行为都是类似的，例如高评价等等，但也有不乏一些忠诚客户有着和非忠诚客户相似的行为。
+
+# 4.建模
+## 首先使用逻辑回归
+```{r}
+# 划分训练测试集
+n_row <- nrow(starbucks)
+set.seed(123)
+train_index <- sample(n_row, n_row * 0.8)
+train <- starbucks[train_index, ]
+test <- starbucks[-train_index, ]
+
+
+glm_starbucks <- glm(loyal ~. , train, family="binomial")
+summary(glm_starbucks)
+
+pred <- predict(glm_starbucks, newdata = test[, -18], type = "response")
+pred <- ifelse(pred > 0.5, 1, 0)
+
+# 计算准确度
+confuMatrix <- table(actual = test$loyal, pred = pred)
+accuracy_rate <- sum(diag(confuMatrix)) / sum(confuMatrix) * 100
+accuracy_rate
+
+# 计算odd ratio
+coefs <- data.frame(glm_starbucks$coefficients)
+coefs <- data.frame(coef = rownames(coefs), value = coefs$glm_starbucks.coefficients)
+coefs <- coefs[-1,]
+coefs <- coefs %>% mutate(odds = round(exp(coefs$value),2))
+
+# 去除其中一个极大值
+coefs <- coefs[-1, ]
+
+# 可视化odds ratio
+ggplot(coefs, aes(x = coef, y = odds)) + 
+  geom_bar(stat = "identity") + 
+  theme_light() + 
+  coord_flip() + 
+  geom_label(aes(label = odds), size = 3) +
+  xlab("attributes") +
+  ylab("odds ratio") +
+  ggtitle("The odds ratio of each variables")
+```
+odds ratio意味着客户的忠诚度影响因素，如上图所示，spendPurchase占据了很重要的一个地位，其次是客户的priceRate和chooseRate也会影响忠诚度。某种意义上说，productRate也会对忠诚度有略微影响。  
+```{r message=FALSE}
+# 用可视化的方式查看timeSpend与membershipCard如何影响客户忠诚度
+
+a <- ggplot(starbucks, aes(x = productRate, y = loyal)) + 
+  geom_jitter(height = .01, alpha = .5) +
+  stat_smooth(method="glm", method.args = list(family = "binomial"), se=F) +
+  theme_light() + 
+  ggtitle("How productRate affect customer loyalty") 
+
+b <- ggplot(starbucks, aes(x = spendPurchase, y = loyal)) + 
+  geom_jitter(height = .01, alpha = .5) +
+  stat_smooth(method="glm", method.args = list(family = "binomial"), se=F) +
+  theme_light() + 
+  ggtitle("How spendPurchase affect customer loyalty") 
+
+c <- ggplot(starbucks, aes(x = priceRate, y = loyal)) + 
+  geom_jitter(height = .01, alpha = .5) +
+  stat_smooth(method="glm", method.args = list(family = "binomial"), se=F) +
+  theme_light() + 
+  ggtitle("How priceRate affect customer loyalty") 
+
+d <- ggplot(starbucks, aes(x = chooseRate, y = loyal)) + 
+  geom_jitter(height = .01, alpha = .5) +
+  stat_smooth(method="glm", method.args = list(family = "binomial"), se=F) +
+  theme_light() + 
+  ggtitle("How chooseRate affect customer loyalty") 
+
+gridExtra::grid.arrange(a, b, c, d, ncol = 2, nrow = 2)
+```
+可以看到，提高productRate, priceRate, chooseRate都会对客户忠诚度的提高有积极意义。
+
+## 决策树与随机森林方法
+```{r}
+# 先将loyal的数据类型转换为因子
+train$loyal <- factor(train$loyal)
+test$loyal <- factor(test$loyal)
+
+# 首先创建公式
+starbucks_formula <- reformulate(names(starbucks)[-12], response = "loyal")
+
+# 设置10倍交叉验证
+cv_parameter <- trainControl(method = "CV", number = 10)
+
+# 训练决策树模型
+tree_starbucks <- train(starbucks_formula, data = train, method = "rpart", trControl = cv_parameter)
+
+# 训练随机森林模型
+rf_starbucks <- train(starbucks_formula, data = train, method = "rf", trControl = cv_parameter)
+
+tree_starbucks
+rf_starbucks
+
+# prediction -- tree
+tree_predict <-  cbind(
+  actual = test$loyal,
+  predicted = predict(tree_starbucks, test[, -12], type = 'raw'),
+  predict(tree_starbucks, test[, -12], type = 'prob')
+)
+
+# prediction -- rf
+rf_predict <-  cbind(
+  actual = test$loyal,
+  predicted = predict(rf_starbucks, test[, -12], type = 'raw'),
+  predict(rf_starbucks, test[, -12], type = 'prob')
+)
+
+# 混淆矩阵
+tree_confmat <- confusionMatrix(data = tree_predict$predicted, reference = tree_predict$actual, positive = "1")
+rf_confmat <- confusionMatrix(data = rf_predict$predicted, reference = rf_predict$actual, positive = "1")
+tree_confmat    
+rf_confmat    
+```
+
+## 支持向量机方法
+```{r}
+# 训练模型，内核为线性，cost为1
+lk_svm_starbucks <- ksvm(starbucks_formula, data = train, kernel = 'vanilladot', C = 1, type = "C-svc")
+
+# 预测
+lk_svm_starbucks_pred <- predict(lk_svm_starbucks, test[,-12])
+
+# 查看结果与准确率
+lk_svm_results_table <- table(svm = lk_svm_starbucks_pred,  actual = test$loyal)
+lk_svm_results_table
+acc_lk_svm <- sum(diag(lk_svm_results_table)) / sum(lk_svm_results_table)
+acc_lk_svm     # 0.8695652
+
+
+# 训练模型，内核为radial basis，cost为1
+rbf_svm_starbucks <- ksvm(starbucks_formula, data = train, kernel = 'rbfdot', C = 1, type = "C-svc")
+
+# 预测
+rbf_svm_starbucks_pred <- predict(rbf_svm_starbucks, test[,-12])
+
+# 查看结果与准确率
+rbf_svm_results_table <- table(svm = rbf_svm_starbucks_pred,  actual = test$loyal)
+rbf_svm_results_table
+acc_rbf_svm <- sum(diag(rbf_svm_results_table)) / sum(rbf_svm_results_table)
+acc_rbf_svm     # 0.9130435
+```
+
+# 各方法的比较
+```{r}
+data.frame(Method = c("Logistic regression", "Decision tree", "Random Forest", "SVM-lk", "SVM-rbf"),
+           Accuracy = c(accuracy_rate/100, tree_confmat$overall[1], rf_confmat$overall[1], acc_lk_svm, acc_rbf_svm))
+```
+
+综合来看，逻辑回归和SVM方法较好。因此可以有如下方案以保留客户。
+1.以下因素都会影响客户的忠诚度
+spendPurchase/priceRate/chooseRate/productRate
+
+适当的改进这些因素可能会有好的效果。

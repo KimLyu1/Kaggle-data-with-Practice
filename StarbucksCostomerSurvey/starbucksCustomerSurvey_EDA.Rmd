@@ -1,0 +1,545 @@
+---
+title: "StarBucks customer survey"
+output: default
+---
+
+# library
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(ggThemeAssist)
+library(Hmisc)
+```
+
+# Data
+```{r}
+starBucks <- read.csv("D:/RFile/Kaggle/starbucks customer survey/archive/Starbucks satisfactory survey.csv")
+```
+
+# inspect
+```{r}
+# str(starBucks)
+starBucks <- na.omit(starBucks)
+
+# names(starBucks)
+
+names(starBucks) <- c("time", "gender", "age", "status", "income", "visitNo", "preference", "timespend", "location", "membershipCard", "purchaseItem", "moneySpend", "compareRate", "priceRate", "salesImportance", "ambianceRate", "wifiRate", "serviceRate", "chooseRate", "submitThrough", "loyalty")
+
+# 调整preference的值
+starBucks[starBucks$preference == "never", 'preference'] <- "Never"
+starBucks[starBucks$preference == "Never ", 'preference'] <- "Never"
+starBucks[starBucks$preference == "Never buy", 'preference'] <- "Never"
+starBucks[starBucks$preference == "I dont like coffee", 'preference'] <- "Never"
+
+# 由于星巴克主要销售咖啡和冷饮，只要是多选的值都划分为其主类。
+
+starBucks[starBucks$purchaseItem == "never", 'purchaseItem'] <- "Nothing"
+starBucks[starBucks$purchaseItem == "Nothing ", 'purchaseItem'] <- "Nothing"
+starBucks[starBucks$purchaseItem == "Never ", 'purchaseItem'] <- "Nothing"
+starBucks[starBucks$purchaseItem == "Never", 'purchaseItem'] <- "Nothing"
+starBucks[starBucks$purchaseItem == "Cold drinks;Never", 'purchaseItem'] <- "Cold drinks"
+starBucks[starBucks$purchaseItem == "Coffee;Cold drinks;Juices;Pastries;Sandwiches", 'purchaseItem'] <- "Coffee"
+starBucks[starBucks$purchaseItem == "Coffee;Juices;Pastries;Sandwiches", 'purchaseItem'] <- "Coffee"
+starBucks[starBucks$purchaseItem == "Coffee;Pastries;Sandwiches", 'purchaseItem'] <- "Coffee"
+starBucks[starBucks$purchaseItem == "Coffee;Cold drinks;Pastries;Sandwiches", 'purchaseItem'] <- "Coffee"
+starBucks[starBucks$purchaseItem == "Cold drinks;Juices;Pastries", 'purchaseItem'] <- "Cold drinks"
+starBucks[starBucks$purchaseItem == "Coffee;Cold drinks;Pastries;Sandwiches", 'purchaseItem'] <- "Coffee"
+starBucks[starBucks$purchaseItem == "Cold drinks;Pastries;Sandwiches", 'purchaseItem'] <- "Cold drinks"
+```
+
+# EDA
+## 这家星巴克的客户组成成分
+```{r}
+gender_count <- starBucks %>% 
+  group_by(gender) %>% 
+  summarise(Count = length(time))
+
+age_count <- starBucks %>% 
+  group_by(age) %>% 
+  summarise(Count = length(time)) %>%
+  mutate(percent = Count/sum(Count)*100)
+
+status_count <- starBucks %>% 
+  group_by(status) %>% 
+  summarise(Count = length(time))
+
+income_count <- starBucks %>% 
+  group_by(income) %>% 
+  summarise(Count = length(time))
+
+membershipCard_count <- starBucks %>% 
+  group_by(membershipCard) %>% 
+  summarise(Count = length(time)) %>%
+  mutate(percent = Count/sum(Count)*100)
+
+location_count <- starBucks %>% 
+  group_by(location) %>% 
+  summarise(Count = length(time))
+
+
+options(repr.plot.width = 20, repr.plot.height = 20)
+
+a <- ggplot(gender_count, aes(x = gender, y = Count, fill = gender)) +
+  geom_bar(stat = 'identity') +
+  geom_label(aes(label = Count), size = 6) +
+  theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0.5,
+    hjust = 0.5
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Gender distribution", y = "Count",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right")
+
+b <- ggplot(age_count, aes(x = "", y = percent, fill = age)) +
+  geom_bar(stat = 'identity', color = "white") +
+  coord_polar("y", start = 0) +
+  #geom_label(aes(label = Count), size = 8) +
+  theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0.5,
+    hjust = 1
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(
+    title = "Age distribution",
+    y = "",
+    x = "",
+    colour = "Blue"
+  ) + theme(legend.background = element_rect(fill = "aliceblue"),
+            legend.position = "right") +
+  geom_text(
+    aes(label = paste0(round(percent), "%")),
+    position = position_stack(vjust = 0.5),
+    color = "black",
+    size = 5
+  )
+
+
+c <- ggplot(status_count, aes(x = status, y = Count, fill = status)) +
+  geom_bar(stat = 'identity') +
+  geom_label(aes(label = Count), size = 6) +
+  coord_flip() +
+  theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0.5,
+    hjust = 0.5
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Status distribution", y = "Count",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right")
+
+d <- ggplot(income_count, aes(x = income, y = Count, fill = income)) +
+  geom_bar(stat = 'identity') +
+  geom_label(aes(label = Count), size = 6) +
+  theme_light() +
+  coord_flip() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0.5,
+    hjust = 0.5
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Income distribution", y = "Count",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "none")
+
+e <- ggplot(membershipCard_count, aes(x = "", y = percent, fill = membershipCard)) +
+  geom_bar(stat = 'identity', color = "white") +
+  coord_polar("y", start = 0) +
+  #geom_label(aes(label = Count), size = 8) +
+  theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0.5,
+    hjust = 1
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(
+    title = "MembershipCard distribution",
+    y = "",
+    x = "",
+    colour = "Blue"
+  ) + theme(legend.background = element_rect(fill = "aliceblue"),
+            legend.position = "right") +
+  geom_text(
+    aes(label = paste0(round(percent), "%")),
+    position = position_stack(vjust = 0.5),
+    color = "black",
+    size = 5
+  )
+
+f <- ggplot(location_count, aes(x = location, y = Count, fill = location)) +
+  geom_bar(stat = 'identity') +
+  geom_label(aes(label = Count), size = 6) +
+  theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0.5,
+    hjust = 0.5
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "Location distribution", y = "Count",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right")
+
+gridExtra::grid.arrange(a, b, c, d, e, f, ncol = 3, nrow = 2)
+```
+这家店的客户性别比例几乎一致，女性比男性略微多一些。其中学生与职工是这家店的常客，且都较为年轻（20岁-29岁）。客户的收入普遍低于RM25000，并有大约50%的人拥有会员卡, 大多数顾客离最近的店超过3公里。
+
+## 客户的行为统计
+```{r}
+visitNo_count <- starBucks %>% 
+  group_by(visitNo) %>% 
+  summarise(Count = length(time)) %>%
+  mutate(percent = Count/sum(Count)*100)
+
+preference_count <- starBucks %>% 
+  group_by(preference) %>% 
+  summarise(Count = length(time)) %>%
+  mutate(percent = Count/sum(Count)*100)
+
+timespend_count <- starBucks %>% 
+  group_by(timespend) %>% 
+  summarise(Count = length(time)) %>%
+  mutate(percent = Count/sum(Count)*100)
+
+purchaseItem_count <- starBucks %>% 
+  group_by(purchaseItem) %>% 
+  summarise(Count = length(time)) %>%
+  mutate(percent = Count/sum(Count)*100)
+
+moneySpend_count <- starBucks %>% 
+  group_by(moneySpend) %>% 
+  summarise(Count = length(time)) %>%
+  mutate(percent = Count/sum(Count)*100)
+
+aa <- ggplot(visitNo_count, aes(x = visitNo, y = percent)) +
+  geom_segment(aes(xend = visitNo, yend=0, color = visitNo), size = 2.3, alpha = .8) +
+  geom_point(mapping = aes(color = visitNo), size = 3, shape = 19) +
+  geom_line(group = 1, size = 1.1, linetype = 10, color = "grey") + 
+  theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0.5,
+    hjust = 0.5
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "visitNo distribution", y = "Percent",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right") +
+    geom_text(
+    aes(label = paste0(round(percent), "%")),
+    position = position_stack(vjust = 1.05),
+    color = "black",
+    size = 5
+  )
+
+bb <- ggplot(preference_count, aes(x = preference, y = percent)) +
+  geom_segment(aes(xend = preference, yend=0, color = preference), size = 2.3, alpha = .8) +
+  geom_point(mapping = aes(color = preference), size = 3, shape = 19) +
+  geom_line(group = 1, size = 1.1, linetype = 10, color = "grey") + 
+  theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0.5,
+    hjust = 0.5
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "preference distribution", y = "Percent",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right") +
+    geom_text(
+    aes(label = paste0(round(percent), "%")),
+    position = position_stack(vjust = 1.05),
+    color = "black",
+    size = 5
+  )
+
+cc <- ggplot(timespend_count, aes(x = timespend, y = percent)) +
+  geom_segment(aes(xend = timespend, yend=0, color = timespend), size = 2.3, alpha = .8) +
+  geom_point(mapping = aes(color = timespend), size = 3, shape = 19) +
+  geom_line(group = 1, size = 1.1, linetype = 10, color = "grey") + 
+  theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0.5,
+    hjust = 0.5
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "timespend distribution", y = "Percent",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right") +
+    geom_text(
+    aes(label = paste0(round(percent), "%")),
+    position = position_stack(vjust = 1.05),
+    color = "black",
+    size = 5
+  ) + 
+  scale_x_discrete(
+  #name='X轴',
+  # limits=c('A','B','C','D'),
+  # breaks=c('A','B','C','D'),
+  labels=c('< 30min','1h ~ 2h','2h ~ 3h','30min ~ 1h', '> 3h'),
+  #expand=c(0,0),
+  position='bottom'
+)
+
+dd <- ggplot(purchaseItem_count, aes(x = purchaseItem, y = percent)) +
+  geom_segment(aes(xend = purchaseItem, yend=0, color = purchaseItem), size = 2.3, alpha = .8) +
+  geom_point(mapping = aes(color = purchaseItem), size = 3, shape = 19) +
+  geom_line(group = 1, size = 1.1, linetype = 10, color = "grey") + 
+  theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 90,
+    vjust = 0.5,
+    hjust = 0.5
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "purchaseItem distribution", y = "Percent",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right") +
+    geom_text(
+    aes(label = paste0(round(percent), "%")),
+    position = position_stack(vjust = 1.05),
+    color = "black",
+    size = 5
+  ) 
+
+ee <- ggplot(moneySpend_count, aes(x = moneySpend, y = percent)) +
+  geom_segment(aes(xend = moneySpend, yend=0, color = moneySpend), size = 2.3, alpha = .8) +
+  geom_point(mapping = aes(color = moneySpend), size = 3, shape = 19) +
+  geom_line(group = 1, size = 1.1, linetype = 10, color = "grey") + 
+  theme_light() +
+  theme(axis.text.x = element_text(
+    angle = 0,
+    vjust = 0.5,
+    hjust = 0.5
+  ),
+  legend.position = "top") + theme(
+    panel.grid.major = element_line(linetype = "blank"),
+    panel.grid.minor = element_line(linetype = "blank"),
+    axis.title = element_text(
+      size = 12,
+      face = "italic",
+      colour = "cadetblue4"
+    ),
+    plot.title = element_text(
+      size = 14,
+      face = "bold",
+      colour = "cadetblue"
+    ),
+    panel.background = element_rect(fill = NA),
+    plot.background = element_rect(
+      fill = "aliceblue",
+      colour = "aliceblue",
+      size = 1
+    )
+  ) + labs(title = "moneySpend distribution", y = "Percent",
+           colour = "Blue") + theme(legend.background = element_rect(fill = "aliceblue"),
+                                    legend.position = "right") +
+    geom_text(
+    aes(label = paste0(round(percent), "%")),
+    position = position_stack(vjust = 1.05),
+    color = "black",
+    size = 5
+  )
+
+gridExtra::grid.arrange(aa, bb, cc, dd, ee, ncol = 3, nrow = 2)
+```
+
+从图中能够发现的信息：
+1.大多数顾客是不常去消费的
+2.购买星巴克的顾客大多会选择堂食或是打包
+3.顾客们一般都不会在店里久留，只会停留30~60分钟或更少时间。
+4.顾客一般会选择购买咖啡，但也有的人会选择冷饮。
+5.大多数顾客消费通常不超过RM40
+
+
+
+
